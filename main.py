@@ -1,21 +1,4 @@
 import torch
-import transformers
-from sklearn.model_selection import train_test_split
-from tqdm.auto import tqdm
-import pandas as pd
-import numpy as np
-from torch import nn, optim
-from torch.utils.data import TensorDataset, DataLoader
-from transformers import BertTokenizer, BertForSequenceClassification, AdamW, get_linear_schedule_with_warmup, BertModel
-from imblearn.over_sampling import RandomOverSampler
-from torch.utils.data import RandomSampler, SequentialSampler
-from scipy.special import softmax
-import json
-import fnmatch
-import os
-import Model
-import re
-from sklearn.preprocessing import MinMaxScaler
 
 from GCN_model import GCN
 from AIG_Graph import Aig_graph
