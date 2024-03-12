@@ -32,18 +32,24 @@ if __name__ == '__main__':
     #     graph.parse_aig(file.read())
     # graph.padding(10)
 
-    path = datasets_aig_path + '/dataset_12.pickle'
-    dataset = AIGDataset(to_create_path=path_data_8)
-    #
-    # dataset = AIGDataset(created_dataset_path=path)
-    train_loader, val_loader = dataset.get_data_loaders()
+    path = datasets_aig_path + '/dataset_38.pickle'
+    # dataset = AIGDataset(to_create_path=path_data_8)
+
+    dataset = AIGDataset(dataset_number=40)
+    train_loader, val_loader, test_loader = dataset.get_data_loaders(batch_size=10)
     num_node_features = dataset.get_num_node_features()
 
-    model = GCN(num_node_features=num_node_features, num_classes=20)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    criterion = torch.nn.BCEWithLogitsLoss()
+    model = GCN(num_node_features=num_node_features)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    criterion = torch.nn.MSELoss()
 
-    model.fit(train_loader, val_loader, optimizer, criterion, 2)
+    model.fit(train_loader, val_loader, optimizer, criterion, 20)
+    preds = model.predict(test_loader)
+    print(preds)
+    scaler = dataset.scaler
+    predictions = scaler.inverse_transform(preds)
+    print(predictions)
+
 
 
 

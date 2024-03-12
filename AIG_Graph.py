@@ -79,7 +79,6 @@ class Aig_graph:
                 out_index = self.nodes[output_var.strip()]
                 self.help_list_edges.append((var_index, out_index))
                 self.edges.append((var_index, out_index, inverted))
-        print(type(self.help_list_edges[0]))
         self.create_adjacency_table()
         self.create_networkx_graph()
         self.create_node_vectors()
@@ -125,7 +124,6 @@ class Aig_graph:
                 self.adjacency_matrix.append([0] * max_size)
         # Получаем существующие ключи и векторы
         existing_keys = self.node_vectors.index_to_key
-        print(existing_keys)
         existing_vectors = self.node_vectors.vectors
 
         # Определяем сколько векторов нам нужно добавить
@@ -147,7 +145,6 @@ class Aig_graph:
             self.node_vectors.vectors = new_vectors
             self.node_vectors.key_to_index = {key: i for i, key in enumerate(all_keys)}
             self.node_vectors.index_to_key = all_keys
-            print(len(self.node_vectors.key_to_index))
 
 
 

@@ -2,6 +2,7 @@ import torch
 import pickle
 from torch_geometric.data import Dataset, Data
 from torch_geometric.loader import DataLoader
+from sklearn.preprocessing import MinMaxScaler
 from torch_geometric.utils import dense_to_sparse
 from AIG_Graph import Aig_graph
 import re
@@ -9,14 +10,16 @@ import os
 import json
 import fnmatch
 import numpy as np
-
+from joblib import dump, load
 
 class AIGDataset():
-    def __init__(self, created_dataset_path=None, to_create_path=None, split_ratio=0.8, random_seed=42):
+    def __init__(self, dataset_number=None, to_create_path=None, split_ratio=(0.7, 0.2), random_seed=42):
         super().__init__()
+        self.scaler = MinMaxScaler()
         self.data_list = []
-        if created_dataset_path and os.path.isfile(created_dataset_path):
-            self.load_dataset(created_dataset_path)
+        self.test_list = []
+        if dataset_number and os.path.isfile(f'../VKR_Project/datasets_aig/dataset_{dataset_number}.pickle'):
+            self.load_dataset(dataset_number)
         elif to_create_path:
             self.create_dataset(to_create_path)
             self.save_dataset()
@@ -26,10 +29,14 @@ class AIGDataset():
         # Разделяем на train и val используя split_ratio
         torch.manual_seed(random_seed)  # Для воспроизводимости
         data_size = len(self.data_list)
-        train_size = int(split_ratio * data_size)
+        train_size = int(split_ratio[0] * data_size)
+        val_size = int(split_ratio[1] * data_size)
         indices = torch.randperm(data_size).tolist()
         self.train_data_list = [self.data_list[i] for i in indices[:train_size]]
-        self.val_data_list = [self.data_list[i] for i in indices[train_size:]]
+        self.val_data_list = [self.data_list[i] for i in indices[train_size:train_size + val_size]]
+        self.test_data_list = [self.data_list[i] for i in indices[train_size + val_size:]]
+
+
 
     def create_dataset(self, path):
         list_id = self.sorted_alphanumeric(os.listdir(path))
@@ -38,7 +45,6 @@ class AIGDataset():
         for id in list_id:
             list_name = self.sorted_alphanumeric(os.listdir(path + f'/{id}'))
             for name in list_name:
-                print(name)
                 if len(os.listdir(path + f'/{id}/{name}')) == 9:
                     aig_files = fnmatch.filter(os.listdir(path + f'/{id}/{name}/'), '*.aig')
                     with open(path + f'/{id}/{name}/{name}.json') as json_file:
@@ -50,6 +56,10 @@ class AIGDataset():
                         file_path = os.path.join(path + f'/{id}/{name}/', file_name)
                         with open(file_path, 'r') as file:
                             list_graph.append(file.read())
+        label_array = np.array(list_labels).reshape(-1, 1)
+        print(label_array)
+        self.scaler.fit(label_array)
+        scaled_label_array = self.scaler.transform(label_array)
         max_size = 0
         list_graphs = []
         for aig_str in list_graph:
@@ -58,17 +68,18 @@ class AIGDataset():
             max_size = max(max_size, graph.matrix_size)
             list_graphs.append(graph)
 
-        for index, graph in enumerate(list_graphs[:2]):
+        for index, graph in enumerate(list_graphs):
             graph.padding(max_size)
-            print(graph.node_vectors.get_vector(45))
             node_features = [graph.node_vectors.get_vector(i) for i in range(len(graph.node_vectors.key_to_index))]
+            help_list = list(map(list, zip(*graph.help_list_edges)))
 
-            edge_index = torch.tensor(list(map(list, zip(*graph.help_list_edges))), dtype=torch.long)
+            edge_index = torch.tensor(help_list, dtype=torch.long)
 
             x = torch.tensor(node_features, dtype=torch.float)
 
             # Получение метки для текущего графа
-            label = list_labels[index]
+            label = scaled_label_array[index][0]
+            print(label)
             y = torch.tensor([label], dtype=torch.float)
 
             # Создание объекта Data
@@ -76,7 +87,11 @@ class AIGDataset():
             self.data_list.append(data)
         print(self.data_list)
 
-    def load_dataset(self, dataset_path):
+    def load_dataset(self, number):
+        datasets_path = '../VKR_Project/datasets_aig/'
+        dataset_path = datasets_path + f'dataset_{number}.pickle'
+        scaler_path = datasets_path + f'scaler_{number}.joblib'
+        self.scaler = load(scaler_path)
         with open(dataset_path, 'rb') as f:
             self.data_list = pickle.load(f)
 
@@ -95,11 +110,14 @@ class AIGDataset():
         # Имя следующего файла
         next_index = last_index + 1
         file_name = f'dataset_{next_index}.pickle'
+        scaler_name = f'scaler_{next_index}.joblib'
         file_path = os.path.join(dataset_dir, file_name)
+        scaler_path = os.path.join(dataset_dir, scaler_name)
 
         # Сохранение датасета
         with open(file_path, 'wb') as f:
             pickle.dump(self.data_list, f)
+        dump(self.scaler, scaler_path)
 
         print(f'Датасет сохранен в файл: {file_path}')
 
@@ -107,7 +125,43 @@ class AIGDataset():
         train_loader = DataLoader(self.train_data_list, batch_size=batch_size, shuffle=shuffle)
         val_loader = DataLoader(self.val_data_list, batch_size=batch_size,
                                 shuffle=False)  # Обычно валидационный набор не перемешивают
-        return train_loader, val_loader
+        test_loader = DataLoader(self.test_data_list)
+        return train_loader, val_loader, test_loader
+
+    def get_test_loaders(self, path):
+        list_id = self.sorted_alphanumeric(os.listdir(path))
+        list_graph = []
+        for id in list_id:
+            list_name = self.sorted_alphanumeric(os.listdir(path + f'/{id}'))
+            for name in list_name:
+                if len(os.listdir(path + f'/{id}/{name}')) == 9:
+                    aig_files = fnmatch.filter(os.listdir(path + f'/{id}/{name}/'), '*.aig')
+                    for file_name in aig_files:
+                        file_path = os.path.join(path + f'/{id}/{name}/', file_name)
+                        with open(file_path, 'r') as file:
+                            list_graph.append(file.read())
+        max_size = self.data_list[0].x.shape[0]
+        list_graphs = []
+        for aig_str in list_graph:
+            graph = Aig_graph()
+            graph.parse_aig(aig_str)
+            max_size = max(max_size, graph.matrix_size)
+            list_graphs.append(graph)
+
+        for index, graph in enumerate(list_graphs):
+            graph.padding(max_size)
+            node_features = [graph.node_vectors.get_vector(i) for i in range(len(graph.node_vectors.key_to_index))]
+            help_list = list(map(list, zip(*graph.help_list_edges)))
+
+            edge_index = torch.tensor(help_list, dtype=torch.long)
+
+            x = torch.tensor(node_features, dtype=torch.float)
+
+            # Получение метки для текущего графа
+
+            # Создание объекта Data
+            data = Data(x=x, edge_index=edge_index)
+            self.test_list.append(data)
 
     def get_num_node_features(self):
         # Предполагаем, что data_list не пуст и каждый Data объект имеет атрибут x
@@ -124,3 +178,5 @@ class AIGDataset():
         convert = lambda text: int(text) if text.isdigit() else text.lower()
         alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(data, key=alphanum_key)
+
+
