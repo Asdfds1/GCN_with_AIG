@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 
 from GCN_model import GCN
 from AIG_Graph import Aig_graph
@@ -16,10 +17,11 @@ if __name__ == '__main__':
     # graph.padding(10)
 
     path = datasets_aig_path + '/dataset_38.pickle'
-    # dataset = AIGDataset(to_create_path=path_data_8)
+    dataset = AIGDataset(to_create_path=path_data_6)
 
-    dataset = AIGDataset(dataset_number=40)
-    train_loader, val_loader, test_loader = dataset.get_data_loaders(batch_size=10)
+    # dataset = AIGDataset(dataset_number=41)
+    train_loader, val_loader = dataset.get_data_loaders(batch_size=10)
+    test_loader, labels = dataset.get_test_loaders(path_data_8)
     num_node_features = dataset.get_num_node_features()
 
     model = GCN(num_node_features=num_node_features)
@@ -28,10 +30,13 @@ if __name__ == '__main__':
 
     model.fit(train_loader, val_loader, optimizer, criterion, 20)
     preds = model.predict(test_loader)
-    print(preds)
     scaler = dataset.scaler
     predictions = scaler.inverse_transform(preds)
-    print(predictions)
+
+    true_label_df = pd.DataFrame(labels, columns=['true'])
+    predictions_df = pd.DataFrame(predictions, columns=['pred'])
+    comparison_df = predictions_df.join(true_label_df)
+    comparison_df.to_csv('pred_2.csv', index=False)
 
 
 

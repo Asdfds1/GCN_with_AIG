@@ -12,6 +12,7 @@ import fnmatch
 import numpy as np
 from joblib import dump, load
 
+
 class AIGDataset():
     def __init__(self, dataset_number=None, to_create_path=None, split_ratio=(0.7, 0.2), random_seed=42):
         super().__init__()
@@ -30,13 +31,9 @@ class AIGDataset():
         torch.manual_seed(random_seed)  # Для воспроизводимости
         data_size = len(self.data_list)
         train_size = int(split_ratio[0] * data_size)
-        val_size = int(split_ratio[1] * data_size)
         indices = torch.randperm(data_size).tolist()
         self.train_data_list = [self.data_list[i] for i in indices[:train_size]]
-        self.val_data_list = [self.data_list[i] for i in indices[train_size:train_size + val_size]]
-        self.test_data_list = [self.data_list[i] for i in indices[train_size + val_size:]]
-
-
+        self.val_data_list = [self.data_list[i] for i in indices[train_size:]]
 
     def create_dataset(self, path):
         list_id = self.sorted_alphanumeric(os.listdir(path))
@@ -49,6 +46,7 @@ class AIGDataset():
                     aig_files = fnmatch.filter(os.listdir(path + f'/{id}/{name}/'), '*.aig')
                     with open(path + f'/{id}/{name}/{name}.json') as json_file:
                         data = json.load(json_file)
+                        print(name)
                         list_labels.append(float(data["abcStats"]["area"]))
                         list_labels.append(float(data["abcStatsBalance"]["area"]))
                         list_labels.append(float(data["abcStatsResyn2"]["area"]))
@@ -71,10 +69,9 @@ class AIGDataset():
         for index, graph in enumerate(list_graphs):
             graph.padding(max_size)
             node_features = [graph.node_vectors.get_vector(i) for i in range(len(graph.node_vectors.key_to_index))]
-            help_list = list(map(list, zip(*graph.help_list_edges)))
 
-            edge_index = torch.tensor(help_list, dtype=torch.long)
-
+            edge_index = torch.tensor(graph.edge_index, dtype=torch.long)
+            edge_atr = torch.tensor(graph.edge_atr, dtype=torch.long)
             x = torch.tensor(node_features, dtype=torch.float)
 
             # Получение метки для текущего графа
@@ -83,7 +80,7 @@ class AIGDataset():
             y = torch.tensor([label], dtype=torch.float)
 
             # Создание объекта Data
-            data = Data(x=x, edge_index=edge_index, y=y)
+            data = Data(x=x, edge_index=edge_index, edge_attr=edge_atr, y=y)
             self.data_list.append(data)
         print(self.data_list)
 
@@ -125,17 +122,23 @@ class AIGDataset():
         train_loader = DataLoader(self.train_data_list, batch_size=batch_size, shuffle=shuffle)
         val_loader = DataLoader(self.val_data_list, batch_size=batch_size,
                                 shuffle=False)  # Обычно валидационный набор не перемешивают
-        test_loader = DataLoader(self.test_data_list)
-        return train_loader, val_loader, test_loader
+        return train_loader, val_loader
 
     def get_test_loaders(self, path):
         list_id = self.sorted_alphanumeric(os.listdir(path))
         list_graph = []
+        list_labels = []
         for id in list_id:
             list_name = self.sorted_alphanumeric(os.listdir(path + f'/{id}'))
             for name in list_name:
                 if len(os.listdir(path + f'/{id}/{name}')) == 9:
                     aig_files = fnmatch.filter(os.listdir(path + f'/{id}/{name}/'), '*.aig')
+                    with open(path + f'/{id}/{name}/{name}.json') as json_file:
+                        data = json.load(json_file)
+                        print(name)
+                        list_labels.append(float(data["abcStats"]["area"]))
+                        list_labels.append(float(data["abcStatsBalance"]["area"]))
+                        list_labels.append(float(data["abcStatsResyn2"]["area"]))
                     for file_name in aig_files:
                         file_path = os.path.join(path + f'/{id}/{name}/', file_name)
                         with open(file_path, 'r') as file:
@@ -151,17 +154,21 @@ class AIGDataset():
         for index, graph in enumerate(list_graphs):
             graph.padding(max_size)
             node_features = [graph.node_vectors.get_vector(i) for i in range(len(graph.node_vectors.key_to_index))]
-            help_list = list(map(list, zip(*graph.help_list_edges)))
 
-            edge_index = torch.tensor(help_list, dtype=torch.long)
-
+            edge_index = torch.tensor(graph.edge_index, dtype=torch.long)
+            edge_atr = torch.tensor(graph.edge_atr, dtype=torch.long)
             x = torch.tensor(node_features, dtype=torch.float)
 
             # Получение метки для текущего графа
 
             # Создание объекта Data
-            data = Data(x=x, edge_index=edge_index)
+            data = Data(x=x, edge_index=edge_index, edge_attr=edge_atr)
             self.test_list.append(data)
+        return self.test_loaders(), list_labels
+
+    def test_loaders(self):
+        test_loader = DataLoader(self.test_list)
+        return test_loader
 
     def get_num_node_features(self):
         # Предполагаем, что data_list не пуст и каждый Data объект имеет атрибут x

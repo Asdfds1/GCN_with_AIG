@@ -13,7 +13,8 @@ class Aig_graph:
     def __init__(self):
         self.nodes = {}  # словарь для хранения узлов и их индексов
         self.edges = []  # список для хранения рёбер
-        self.help_list_edges = []
+        self.edge_index = [[], []]
+        self.edge_atr = []
         self.node_types = {}  # словарь для хранения типов узлов
         self.type_map = {'input': 1, 'output': 2, 'and': 3, 'const': 4}
         self.net_graph = nx.Graph()
@@ -22,10 +23,11 @@ class Aig_graph:
 
     def parse_aig(self, aig_str):
         # Определение регулярных выражений для парсинга AIG
+        name = re.compile(r'\bmodule\s+(\w+)')
         input_regex = re.compile(r'input\s+(.*?);')
         wire_regex = re.compile(r'wire\s+(.*?);', re.DOTALL)
         const_regex = re.compile(r"1'b[01]")
-        output_regax = re.compile(r'output\s+(.*?);')
+        output_regax = re.compile(r'output\s+(.*?);', re.DOTALL)
 
         assign_regex = re.compile(r'assign\s+(.*?)\s+=\s+(.*?);')
 
@@ -39,6 +41,7 @@ class Aig_graph:
         assignments = assign_regex.findall(aig_str)
 
         wires = [wire.replace('\n', '') for wire in wires]
+        outputs = [output.replace('\n', '') for output in outputs]
 
         # Добавление узлов
         all_nodes = inputs[0]
@@ -77,7 +80,9 @@ class Aig_graph:
                 inverted = 1 if invert_flag == '~' else 0
                 var_index = self.nodes[var_name.strip()]
                 out_index = self.nodes[output_var.strip()]
-                self.help_list_edges.append((var_index, out_index))
+                self.edge_index[0].append(var_index)
+                self.edge_index[1].append(out_index)
+                self.edge_atr.append(inverted)
                 self.edges.append((var_index, out_index, inverted))
         self.create_adjacency_table()
         self.create_networkx_graph()
